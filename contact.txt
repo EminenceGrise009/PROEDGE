@@ -1,0 +1,168 @@
+// Import necessary libraries
+import android.Manifest
+import android.content.ContentResolver
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.provider.ContactsContract
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import android.widget.SearchView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import kotlinx.android.synthetic.main.activity_main.*
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var contactListView: ListView
+    private lateinit var searchView: SearchView
+    private lateinit var contactsAdapter: ArrayAdapter<String>
+    private lateinit var contactDetailsPopup: ContactDetailsPopup
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // Initialize UI elements
+        contactListView = findViewById(R.id.contactListView)
+        searchView = findViewById(R.id.searchView)
+
+        // Initialize adapters
+        contactsAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1)
+        contactListView.adapter = contactsAdapter
+
+        // Set up the click listener for contact items
+        contactListView.setOnItemClickListener { _, _, position, _ ->
+            val contactName = contactsAdapter.getItem(position)
+            val contactNumber = getContactNumber(contactName)
+            showContactDetailsPopup(contactName, contactNumber)
+        }
+
+        // Set up the search functionality
+        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                return false
+            }
+
+            override fun onQueryTextChange(newText: String?): Boolean {
+                filterContacts(newText)
+                return true
+            }
+        })
+
+        // Request contacts permission if not granted
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_CONTACTS),
+                1
+            )
+        } else {
+            displayContacts()
+        }
+    }
+
+    // Fetch and display the phone contacts
+    private fun displayContacts() {
+        val contacts = getPhoneContacts()
+        contactsAdapter.clear()
+        contactsAdapter.addAll(contacts)
+    }
+
+    // Filter contacts based on search query
+    private fun filterContacts(query: String?) {
+        contactsAdapter.filter.filter(query)
+    }
+
+    // Retrieve the contact number for a given name
+    private fun getContactNumber(name: String?): String? {
+        val cursor = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?",
+            arrayOf(name),
+            null
+        )
+
+        return if (cursor?.moveToFirst() == true) {
+            val number =
+                cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))
+            cursor.close()
+            number
+        } else {
+            null
+        }
+    }
+
+    // Show the contact details popup
+    private fun showContactDetailsPopup(name: String?, number: String?) {
+        contactDetailsPopup = ContactDetailsPopup(this, name, number)
+        contactDetailsPopup.show()
+    }
+
+    // Get phone contacts from the device
+    private fun getPhoneContacts(): ArrayList<String> {
+        val contactsList = ArrayList<String>()
+        val contentResolver: ContentResolver = contentResolver
+        val cursor = contentResolver.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            null,
+            null,
+            null,
+            null
+        )
+
+        if (cursor?.count ?: 0 > 0) {
+            while (cursor?.moveToNext() == true) {
+                val name =
+                    cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME))
+                contactsList.add(name)
+            }
+        }
+        cursor?.close()
+        return contactsList
+    }
+
+    // Custom popup class to show contact details
+    private class ContactDetailsPopup(
+        private val activity: AppCompatActivity,
+        private val name: String?,
+        private val number: String?
+    ) {
+        private val popup: PopupWindow
+
+        init {
+            val layoutInflater = activity.layoutInflater
+            val popupView = layoutInflater.inflate(R.layout.popup_contact_details, null)
+            popup = PopupWindow(
+                popupView,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+
+            popupView.findViewById<TextView>(R.id.nameTextView).text = name
+            popupView.findViewById<TextView>(R.id.numberTextView).text = number
+
+            val closeButton = popupView.findViewById<Button>(R.id.closeButton)
+            closeButton.setOnClickListener {
+                dismiss()
+            }
+
+            val background = ColorDrawable(Color.TRANSPARENT)
+            popup.setBackgroundDrawable(background)
+            popup.isOutsideTouchable = true
+        }
+
+        fun show() {
+            popup.showAtLocation(activity.findViewById(R.id.mainLayout), Gravity.CENTER, 0, 0)
+        }
+
+        fun dismiss() {
+            popup.dismiss()
+        }
+    }
+}
